@@ -1,0 +1,176 @@
+---
+title: "Prediction Assignment"
+author: "Anand Rao"
+date: "October 22, 2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Executive Summary
+
+The objective of this assignment is to analyze activity tracking data of six participants to determine how well they are performing certain activities. We build four different models using the training data and predict the values for the test data. Of the four methods used the Random Forest model has the best accuracy. 
+
+#### Background
+
+Human Activity Recognition is a key area of study with the advent of activity tracking devices like *Jawbone*, *fitbit*, etc. Consumers wearing these devices often monitor their activity level, calories expended, number of miles walked etc. Most often these devices provide statistics on *how much* activity the person is doing; very rarely do they monitor *how well* they are doing these activities. 
+
+The goal of this project is to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants to monitor *how well* they do them. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways - exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E). Class A corresponds to the specified execution of the exercise, while the other 4 classes correspond to common mistakes.
+
+Once we read the data for this exercise we perform data cleansing and remove some of the variables that are close to zero and also variables that have a number of NAs. We then split the data into a training and test set. We fit four different types of models and then predict the values of the test data using these models to compare their accuracy. The four models we analyze are (a) Decision Trees; (b) Random Forest; (c) Gradient Boosting and (d) Support Vector Machine (SVM).
+
+#### Data Loading and Exploratory Analysis
+
+We first load all of the libraries that we will be using for this exercise. The data is read from the two URLs provided.We split the training data into two sets - 70% to build the model and the remaining 30% to test the model that we have built.
+
+```{r environment}
+# Load all the requisite libraries
+setwd("C:/Users/anand/Documents/Anand/PracticalMachineLearning(Coursera)")
+library(knitr)
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(rattle)
+library(randomForest)
+set.seed(12345)
+```
+
+```{r read-data}
+# set the URL for the training and test data & read the data
+TrainingDataURL <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+TestDataURL  <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+training <- read.csv(url(TrainingDataURL))
+testing  <- read.csv(url(TestDataURL))
+
+# Partition the Training dataset into two based on the classe variable
+inTrain  <- createDataPartition(training$classe, p=0.7, list=FALSE)
+Train1 <- training[inTrain, ]
+Train2  <- training[-inTrain, ]
+```
+
+When we examine the data we see that there are a number of near zero values and NAs. We remove both these types of variables from the training data set to improve the model prediction. We also remove the first five columns which are identifiers and time stamps. 
+
+```{r data-cleanup}
+dim(Train1)
+dim(Train2)
+
+# Remove near zero variance variables from the training set
+ZeroVars <- nearZeroVar(Train1)
+Train1 <- Train1[, -ZeroVars]
+Train2  <- Train2[, -ZeroVars]
+dim(Train1)
+dim(Train2)
+
+# Remove NA variables from the training set
+NAVars    <- sapply(Train1, function(x) mean(is.na(x))) > 0.95
+Train1 <- Train1[, NAVars==FALSE]
+Train2  <- Train2[, NAVars==FALSE]
+dim(Train1)
+dim(Train2)
+
+# Remove identifier, user name and all time stamps from first 5 columns
+Train1 <- Train1[, -(1:5)]
+Train2  <- Train2[, -(1:5)]
+dim(Train1)
+dim(Train2)
+```
+
+After the clean up process the number of variables were reduced from 106 variables to 54 variables.
+
+
+#### Model: Decision Tree
+
+We first build a decision tree model and plot it. The confusion matrix provides us with an analysis of the actual and predictived values.  
+
+```{r models-decisiontree}
+set.seed(12345)
+modDecisionTree <- rpart(classe ~ ., data=Train1, method="class")
+fancyRpartPlot(modDecisionTree)
+
+# prediction on Test dataset
+predictDecisionTree <- predict(modDecisionTree, newdata=Train2, type="class")
+confusionMatrixDecisionTree <- confusionMatrix(predictDecisionTree, Train2$classe)
+confusionMatrixDecisionTree
+```
+
+As shown by the details of the confusion matrix the accuracy of our decision tree model is around `r round(confusionMatrixDecisionTree$overall['Accuracy']*100,2)`%.
+
+#### Model: Random Forest
+
+Next we build a random forest model. We use repeated cross-validation as the control.  
+
+
+```{r models-randomforest}
+set.seed(12345)
+controlRF <- trainControl(method="repeatedcv", number=3)
+modRandomForest <- suppressMessages(train(classe ~ ., data=Train1, method="rf",
+                          trControl=controlRF))
+modRandomForest$finalModel 
+
+# prediction on Test dataset
+predictRandomForest <- predict(modRandomForest, newdata=Train2)
+confusionMatrixRandomForest <- confusionMatrix(predictRandomForest, Train2$classe)
+confusionMatrixRandomForest
+```
+
+As shown by the details of the confusion matrix the accuracy of our random forest model is `r round(confusionMatrixRandomForest$overall['Accuracy']*100,2)`%.
+
+#### Model: Gradient Boosting
+
+Next we build a gradient boosting model using repeated cross-validation as the control. We then predict the values for our test data using the model. 
+
+```{r models-gradientboosting}
+set.seed(12345)
+controlGBM <- trainControl(method = "repeatedcv", number = 3)
+modGradientBoosting  <- suppressMessages(train(classe ~ ., data=Train1, method = "gbm",
+                    trControl = controlGBM,
+                    verbose = FALSE))
+modGradientBoosting$finalModel
+
+# prediction on Test dataset
+predictGradientBoosting <- predict(modGradientBoosting, newdata=Train2)
+confusionMatrixGradientBoosting <- confusionMatrix(predictGradientBoosting, Train2$classe)
+confusionMatrixGradientBoosting
+```
+
+As shown by the details of the confusion matrix the accuracy of our random forest model is `r round(confusionMatrixGradientBoosting$overall['Accuracy']*100,2)`%.
+
+#### Model: Support Vector Machine (SVM)
+
+Next we build a SVM model using repeated cross-validation as the control and use the SVMRadial method. We then predict the values for our test data using the model. 
+
+```{r models-svm}
+set.seed(12345)
+controlSVM <- trainControl(method = "repeatedcv", number = 5,
+                                                      classProbs=TRUE)
+modSVM  <- suppressMessages(train(classe ~ ., data=Train1, 
+                 method = "svmRadial",
+                 tuneLength = 9,
+                 preProc = c("center","scale"),
+                 metric="ROC",
+                 trControl = controlSVM))
+modSVM$finalModel
+
+# prediction on Test dataset
+predictSVM <- predict(modSVM, newdata=Train2)
+confusionMatrixSVM <- confusionMatrix(predictSVM, Train2$classe)
+confusionMatrixSVM
+```
+
+As shown by the details of the confusion matrix the accuracy of our SVM model is `r round(confusionMatrixSVM$overall['Accuracy']*100,2)`%.
+
+#### Conclusion
+
+Of the four models we built the accuracy is highest for the Random Forest model. We will use this model to predict the values of any future data including the 20 test cases to be used as part of the assignment. The least accurate model is the Decision Tree model. 
+
+```{r rftesting}
+predictTestingData <- predict(modRandomForest, newdata=testing)
+predictTestingData
+```
+
+The high accuracy of the Random Forest model leads one to believe that the data might have been specially built for the assignment. The accuracy is likely to be much lower for most real world problems.
+
+
